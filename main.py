@@ -91,8 +91,14 @@ def main():
         scored.append((score, uid, rank))
     scored.sort(reverse=True)
     expected = [uid for _, uid, _ in scored]  # expected order, best first
-    # probabilities: Gaussian around expected rank, sigma 2.5 places
+    # probabilities: Gaussian around expected rank. Sigma adapts to how much the
+    # chart moved between the last two reads (more churn -> wider spread).
     sigma = 2.5
+    if len(reads) >= 2:
+        prev_top = [g.get("universe_id") for g in (reads[-2].get("up_and_coming") or [])[:10]]
+        cur_top = [g.get("universe_id") for g in chart[:10]]
+        moved = sum(1 for u in cur_top if u not in prev_top)
+        sigma = 2.0 + moved * 0.25
     probs = []
     for place in range(1, 11):
         row = []
