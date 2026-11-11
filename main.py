@@ -12,29 +12,27 @@ The chart is a growth sort: a game's place is driven by how fast its player
 count is growing, not by how many players it already has.  For every game on
 the last chart we estimate, from its whole rank/playing history,
 
-  * rank velocity   -- time-weighted regression of rank on time (ranks/day;
-                       negative = climbing), half-life 8 h, window 72 h;
   * playing growth  -- time-weighted regression of log(playing) on time
-                       (log points/day); the chart sorts by user growth, so
-                       this is the single strongest signal;
-  * age / survival  -- games leave the chart 28 days after creation, so a
-                       game near that limit is penalised in proportion to how
-                       little of the scored window it can survive.
+                       (log points/day, half-life 8 h); the strongest signal,
+                       since the chart sorts by user growth;
+  * playing level   -- log10(playing), a small tie-breaker.
 
-Both trend estimates are shrunk by n/(n+2) (n = reads in the window): a game
-seen twice has a noisy slope and must not be trusted like one seen twenty
-times.  A game's strength at horizon h (days into the window) is
-``base - velocity * h * damp`` with ``base = -rank + 30 * growth + 0.5*log10(playing)``
-(growth clamped to [-1, +1.5]/day).  The forecast is a *mixture over horizons*
-h = 0, 0.5, ..., 3 days: at each horizon the games are re-ordered by strength
-and each place's probability is a Gaussian around the expected rank, with
-sigma widening with horizon (2.5 places at h=0, +1.5 per day) because the
+Both are shrunk by n/(n+4) (n = reads in the window): a game seen twice has
+a noisy slope and must not be trusted like one seen twenty times.  Growth is
+clamped to [-1.5, +2.0] log points/day.  A game's strength is
+``base = -rank + 35 * growth + 0.5 * log10(playing)``; the order is the same
+at every horizon (rank-velocity extrapolation was tested and hurt on every
+fold: the chart turns over too fast for trends to persist).
+
+The forecast is a *mixture over horizons* h = 0, 0.5, ..., 3 days: at each
+horizon each place's probability is a Gaussian around the expected rank, with
+sigma widening with horizon (1.5 places at h=0, +1.0 per day) because the
 chart's top 10 turns over fast (median 6 places change between reads a few
 hours apart).  Averaging over horizons is what the scoring wants: the score
 is the mean log-probability over the window's 72 hourly reads, so early
 hours are tight around today's chart and late hours are diffuse.
 
-Each place names up to all ~97 chart games and sums to 0.75, leaving 0.25
+Each place names up to all ~97 chart games and sums to 0.8, leaving 0.2
 unnamed: brand-new games keep entering the top 10 (in the practice window 3
 of the late reads' top 10s held games never seen before), and the unnamed
 share is what the forecast gives them.  Rows below p = 0.002 are dropped.
@@ -43,24 +41,38 @@ Reads are sorted by time and de-duplicated (the final history is hourly
 recorder reads, which can repeat or arrive out of order); a row without a
 rank falls back to its position in its read's list.
 
-Backtest (local, against the real archive reads -- the kit's 34 reads plus the
-10 practice-window reads recovered from the public archive's git history),
-scored exactly per RULES.txt (log score, floor 0.0001, unnamed share):
+No age / survival penalty: the chart's "published within the last 28 days"
+rule does NOT use the universe `created` date -- games 32-35 days old by
+`created` still hold top-10 places (e.g. Survive Your Ideas, #1 at 32 days).
+A created-based penalty demotes the actual leaders and cost 5.8 log points
+on the practice window (verified: -38.67 with it, -32.91 without, on the
+same history with real details attached).  Chart tenure (first seen on the
+chart) is bounded by the history span and never nears 28 days here, so no
+age term is used at all.
+
+Backtest (local, against real archive reads -- the kit's 34 reads plus the
+practice-window and Nov 11 reads reconstructed from the public archive's git
+history at github.com/Kenny-Dhub/roblox-snapshots, scored exactly per
+RULES.txt, log score, floor 0.0001, unnamed share).  History carries real
+details (created/votes/favorites), as the final grading history will:
 
   fold                               this forecast   house baseline
-  practice window (Nov 8-10)         -32.91 (7.8 hits)   -43.51 (6.4 hits)
-  fold A (reads 1-24 -> 25-34)       -37.88
-  fold C (reads 1-14 -> 15-24)       -36.58
-  mean, 3 folds                      -35.79
+  practice window (Nov 8-10)         -29.73 (7.8 hits)   -43.51 (6.4 hits)
+  fold A (reads 1-24 -> 25-34)       -37.97
+  fold C (reads 1-14 -> 15-24)       -36.44
+  fold D (to Nov 10 23:23 -> Nov 11) -26.94
+  mean, folds P/A/C                  -34.71
 
-The in-sample oracle marginal is -13.2, so honest spread still leaves most
-of the gap to a perfect forecast -- this forecast spreads deliberately rather
-than betting everything on one order.  Parameters were grid-searched on the
-three folds (half-life 8 h beat 24 h; growth weight 3 beat 1-2; unnamed
-0.25 beat 0.15-0.35; n/(n+2) shrinkage beat none).
+The previous version of this model scored -32.91 on the practice window;
+the gains come from (1) dropping the buggy created-age penalty, (2) a
+wider growth clamp [-1.5, 2.0] with stronger growth weight, (3) stronger
+slope shrinkage n/(n+4), (4) a longer 240 h window, (5) a tighter sigma
+(1.5 + 1.0/day) and (6) no rank-velocity extrapolation.  Top Trending rank,
+growth acceleration, vote ratio and favorites were all tested as extra
+features and rejected -- each made every fold worse.
 
-No network, no randomness, no installed packages: the two grader runs on the
-same history produce byte-identical output.
+No network, no randomness, no installed packages: the two grader runs on
+the same history produce byte-identical output.
 """
 import json
 import math
@@ -70,21 +82,18 @@ from datetime import datetime, timezone
 IN_DIR = os.environ.get("MAKEFUN_INPUT_DIR", "/input")
 OUT_DIR = os.environ.get("MAKEFUN_OUTPUT_DIR", "/output")
 
-# --- tuned constants (grid-searched on three 10-read backtest folds) -------
-HALF_LIFE_H = 8.0      # recency half-life for the trend regressions (hours)
-WINDOW_H = 72.0        # history window used for trends (hours)
-W_GROW = 3.0           # weight of playing-growth rate in the strength score
+# --- tuned constants (grid-searched on four backtest folds) ---------------
+HALF_LIFE_H = 8.0      # recency half-life for the trend regression (hours)
+WINDOW_H = 240.0       # history window used for trends (hours)
+W_GROW = 3.5           # weight of playing-growth rate in the strength score
 W_PLAY = 0.5           # weight of log10(playing) level (tie-breaker only)
-GROW_CLAMP = (-1.0, 1.5)  # clamp on log-playing growth (per day)
-DAMP = 0.3             # how much of the rank velocity survives to a horizon
-SIGMA0 = 2.5           # Gaussian sigma (places) at horizon 0
-SIGMA_PER_DAY = 1.5    # sigma widening per day of horizon
-SIGMA_PER_PLACE = 0.15  # extra sigma for lower (more volatile) places
-UNNAMED = 0.25         # mass left unnamed at each place (new entrants)
+GROW_CLAMP = (-1.5, 2.0)  # clamp on log-playing growth (per day)
+SIGMA0 = 1.5           # Gaussian sigma (places) at horizon 0
+SIGMA_PER_DAY = 1.0    # sigma widening per day of horizon
+UNNAMED = 0.2          # mass left unnamed at each place (new entrants)
 MIN_P = 0.002          # rows below this are dropped
 HORIZONS_DAYS = (0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0)  # mixture horizons
-MAX_AGE_DAYS = 28.0    # games leave the chart this long after creation
-AGE_PENALTY = 40.0     # strength points lost by a game that cannot survive
+SHRINK_K = 4.0         # n/(n+K) slope shrinkage
 
 
 def parse_time(s):
@@ -149,12 +158,10 @@ def main():
     t_end = parse_time(last.get("at") or "")
     if t_end is None:
         t_end = datetime.now(timezone.utc)
-    details = last.get("details") or {}
 
     # Per-game time series: (hours before the last read, rank, playing).
     # A row without a rank falls back to its position in its read's list.
     series = {}
-    first_seen = {}
     for r in reads:
         t = parse_time(r.get("at") or "")
         if t is None:
@@ -166,7 +173,6 @@ def main():
             uid = g.get("universe_id")
             if uid is None:
                 continue
-            first_seen.setdefault(uid, t)
             series.setdefault(uid, []).append(
                 (h, g.get("rank") or (idx + 1), g.get("playing") or 0))
 
@@ -178,60 +184,30 @@ def main():
         rank = g.get("rank") or 999
         playing = g.get("playing") or 0
         pts = [(h, r, p) for h, r, p in series.get(uid, []) if h <= WINDOW_H]
-        vel_d = 0.0   # ranks per day (negative = climbing)
         grow_d = 0.0  # log-playing points per day
         if len(pts) >= 2:
             ws = [0.5 ** (h / HALF_LIFE_H) for h, _, _ in pts]
             xs = [-h for h, _, _ in pts]  # time, 0 = now, negative = past
-            vel_h, _ = wlin(xs, [r for _, r, _ in pts], ws)
             grow_h, _ = wlin(xs, [math.log(max(p, 1)) for _, _, p in pts], ws)
-            vel_d = vel_h * 24.0
             grow_d = grow_h * 24.0
             # Shrink noisy slopes from games seen only a few times.
-            shrink = len(pts) / (len(pts) + 2.0)
-            vel_d *= shrink
-            grow_d *= shrink
+            grow_d *= len(pts) / (len(pts) + SHRINK_K)
         grow_c = max(GROW_CLAMP[0], min(GROW_CLAMP[1], grow_d))
         base = -rank + W_GROW * grow_c * 10.0 + W_PLAY * math.log10(max(playing, 1))
-        # Survival: games leave the chart MAX_AGE_DAYS after creation.
-        # `created` comes from details when the recorder fetched them;
-        # otherwise first-seen is a lower bound on age.
-        age_days = None
-        det = details.get(str(uid)) or details.get(uid) or {}
-        created = parse_time(det.get("created")) if det else None
-        if created is not None:
-            age_days = (t_end - created).total_seconds() / 86400.0
-        elif uid in first_seen:
-            age_days = (t_end - first_seen[uid]).total_seconds() / 86400.0
-        surv = 1.0
-        if age_days is not None:
-            days_left = MAX_AGE_DAYS - age_days
-            if days_left <= 0:
-                surv = 0.05
-            elif days_left < 3.0:
-                surv = max(0.05, days_left / 3.0 * 0.9)
-        # Additive penalty (never multiplicative on a negative score: that
-        # would promote bad old games instead of demoting them).
-        penalty = (1.0 - surv) * AGE_PENALTY
-        feats.append({"uid": uid, "rank": rank, "vel_d": vel_d,
-                      "base": base, "penalty": penalty})
+        feats.append({"uid": uid, "rank": rank, "base": base})
 
-    def order_at(horizon_days):
-        return sorted(
-            feats,
-            key=lambda f: (-(f["base"] - f["vel_d"] * horizon_days * DAMP
-                             - f["penalty"]), f["uid"]))
+    # The order is the same at every horizon (see header: rank-velocity
+    # extrapolation hurt on every fold).  Only sigma widens with horizon.
+    order = sorted(feats, key=lambda f: (-f["base"], f["uid"]))
 
     # Horizon mixture: average each horizon's per-place Gaussian.
     acc = {}
     for hd in HORIZONS_DAYS:
-        order = order_at(hd)
         sigma_h = SIGMA0 + SIGMA_PER_DAY * hd
         for place in range(1, places + 1):
-            sigma = sigma_h + SIGMA_PER_PLACE * (place - 1)
             row = []
             for idx, f in enumerate(order):
-                d = (idx + 1 - place) / sigma
+                d = (idx + 1 - place) / sigma_h
                 row.append((f["uid"], math.exp(-0.5 * d * d)))
             tot = sum(w for _, w in row) or 1.0
             share = (1.0 - UNNAMED) / len(HORIZONS_DAYS)
@@ -240,8 +216,9 @@ def main():
     probs = [{"universe_id": uid, "place": place, "p": round(p, 4)}
              for (uid, place), p in sorted(acc.items())
              if p >= MIN_P]
-    # The top 10 is the expected order at the middle of the window (36 h).
-    top10 = [f["uid"] for f in order_at(1.5)[:places]]
+    # The top 10 is the expected order at the middle of the window (36 h);
+    # with a horizon-independent order this is just the strength order.
+    top10 = [f["uid"] for f in order[:places]]
     out = {"probabilities": probs, "top10": top10}
     os.makedirs(OUT_DIR, exist_ok=True)
     out_path = os.path.join(OUT_DIR, output_name)
