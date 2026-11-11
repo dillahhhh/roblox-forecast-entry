@@ -21,7 +21,9 @@ history:
   scored window it can survive (`details.created` when the recorder fetched
   it, else first-seen date).
 
-Strength at horizon *h* days is `base − velocity·h·0.3`, with
+Both trend estimates are shrunk by n/(n+2) (n = reads in the window): a game
+seen twice has a noisy slope and must not be trusted like one seen twenty
+times. Strength at horizon *h* days is `base − velocity·h·0.3`, with
 `base = −rank + 30·growth + 0.5·log10(playing)`. The forecast is a **mixture
 over horizons** h = 0, 0.5, …, 3 days: at each horizon games are re-ordered
 by strength and each place's probability is a Gaussian around the expected
@@ -36,6 +38,9 @@ Each place names up to the whole ~97-game chart and sums to 0.75, leaving
 window, 3 of the late reads' top 10s held games never seen before), and the
 unnamed share is what the forecast gives them. Rows below p = 0.002 are
 dropped. `top10` is the expected order at the middle of the window (36 h).
+Reads are sorted by time and de-duplicated (the final history is hourly
+recorder reads, which can repeat or arrive out of order); a row without a
+rank falls back to its position in its read's list.
 
 ## Backtest (local, against real archive reads)
 
@@ -45,16 +50,16 @@ per RULES.txt (log score, floor 0.0001, unnamed share):
 
 | fold | this forecast | house baseline |
 |---|---|---|
-| practice window (Nov 8–10) | **−33.66** (7.8 top-10 hits) | −43.51 (6.4 hits) |
-| fold A (reads 1–24 → 25–34) | −37.74 | — |
-| fold C (reads 1–14 → 15–24) | −37.13 | — |
-| **mean, 3 folds** | **−36.18** | |
+| practice window (Nov 8–10) | **−32.91** (7.8 top-10 hits) | −43.51 (6.4 hits) |
+| fold A (reads 1–24 → 25–34) | −37.88 | — |
+| fold C (reads 1–14 → 15–24) | −36.58 | — |
+| **mean, 3 folds** | **−35.79** | |
 
 The in-sample oracle marginal is −13.2, so honest spread still leaves most
 of the gap to a perfect forecast — this forecast spreads deliberately rather
 than betting everything on one order. Parameters were grid-searched on the
 three folds (half-life 8 h beat 24 h; growth weight 3 beat 1–2; unnamed
-0.25 beat 0.15–0.35).
+0.25 beat 0.15–0.35; n/(n+2) slope shrinkage beat none).
 
 ## Run it
 

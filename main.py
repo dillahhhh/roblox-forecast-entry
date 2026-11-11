@@ -21,7 +21,9 @@ the last chart we estimate, from its whole rank/playing history,
                        game near that limit is penalised in proportion to how
                        little of the scored window it can survive.
 
-A game's strength at horizon h (days into the window) is
+Both trend estimates are shrunk by n/(n+2) (n = reads in the window): a game
+seen twice has a noisy slope and must not be trusted like one seen twenty
+times.  A game's strength at horizon h (days into the window) is
 ``base - velocity * h * damp`` with ``base = -rank + 30 * growth + 0.5*log10(playing)``
 (growth clamped to [-1, +1.5]/day).  The forecast is a *mixture over horizons*
 h = 0, 0.5, ..., 3 days: at each horizon the games are re-ordered by strength
@@ -34,17 +36,28 @@ hours are tight around today's chart and late hours are diffuse.
 
 Each place names up to all ~97 chart games and sums to 0.75, leaving 0.25
 unnamed: brand-new games keep entering the top 10 (in the practice window 3
-of the 10 reads' late top 10s held games never seen before), and the unnamed
+of the late reads' top 10s held games never seen before), and the unnamed
 share is what the forecast gives them.  Rows below p = 0.002 are dropped.
 
+Reads are sorted by time and de-duplicated (the final history is hourly
+recorder reads, which can repeat or arrive out of order); a row without a
+rank falls back to its position in its read's list.
+
 Backtest (local, against the real archive reads -- the kit's 34 reads plus the
-10 practice-window reads recovered from the public archive's git history):
-the house baseline scores -43.51 on the practice window; this forecast
-scores -33.7 there and -37.7 / -37.1 on two earlier 10-read folds (mean
--36.2 over the three folds, vs -37.8 for the same model with a flat 24 h
-half-life).  The oracle in-sample marginal is -13.2, so honest spread still
-leaves most of the gap to a perfect forecast -- this forecast spreads
-deliberately rather than betting on one order.
+10 practice-window reads recovered from the public archive's git history),
+scored exactly per RULES.txt (log score, floor 0.0001, unnamed share):
+
+  fold                               this forecast   house baseline
+  practice window (Nov 8-10)         -32.91 (7.8 hits)   -43.51 (6.4 hits)
+  fold A (reads 1-24 -> 25-34)       -37.88
+  fold C (reads 1-14 -> 15-24)       -36.58
+  mean, 3 folds                      -35.79
+
+The in-sample oracle marginal is -13.2, so honest spread still leaves most
+of the gap to a perfect forecast -- this forecast spreads deliberately rather
+than betting everything on one order.  Parameters were grid-searched on the
+three folds (half-life 8 h beat 24 h; growth weight 3 beat 1-2; unnamed
+0.25 beat 0.15-0.35; n/(n+2) shrinkage beat none).
 
 No network, no randomness, no installed packages: the two grader runs on the
 same history produce byte-identical output.
@@ -115,6 +128,23 @@ def main():
                 reads.append(json.loads(line))
     if not reads:
         raise SystemExit("no history reads")
+    # Sort by time; drop reads without a time and de-duplicate identical
+    # timestamps (the hourly recorder can re-read a slot), keeping the last.
+    stamped = []
+    for r in reads:
+        t = parse_time(r.get("at") or "")
+        if t is not None:
+            stamped.append((t, r))
+    if not stamped:
+        raise SystemExit("no history reads with a timestamp")
+    stamped.sort(key=lambda tr: tr[0])
+    deduped = []
+    for t, r in stamped:
+        if deduped and deduped[-1][0] == t:
+            deduped[-1] = (t, r)
+        else:
+            deduped.append((t, r))
+    reads = [r for _, r in deduped]
     last = reads[-1]
     t_end = parse_time(last.get("at") or "")
     if t_end is None:
@@ -122,6 +152,7 @@ def main():
     details = last.get("details") or {}
 
     # Per-game time series: (hours before the last read, rank, playing).
+    # A row without a rank falls back to its position in its read's list.
     series = {}
     first_seen = {}
     for r in reads:
@@ -131,13 +162,13 @@ def main():
         h = (t_end - t).total_seconds() / 3600.0
         if h < 0:
             continue
-        for g in (r.get("up_and_coming") or []):
+        for idx, g in enumerate(r.get("up_and_coming") or []):
             uid = g.get("universe_id")
             if uid is None:
                 continue
             first_seen.setdefault(uid, t)
             series.setdefault(uid, []).append(
-                (h, g.get("rank") or 999, g.get("playing") or 0))
+                (h, g.get("rank") or (idx + 1), g.get("playing") or 0))
 
     chart = sorted(last.get("up_and_coming") or [],
                    key=lambda g: g.get("rank") or 999)
@@ -156,6 +187,10 @@ def main():
             grow_h, _ = wlin(xs, [math.log(max(p, 1)) for _, _, p in pts], ws)
             vel_d = vel_h * 24.0
             grow_d = grow_h * 24.0
+            # Shrink noisy slopes from games seen only a few times.
+            shrink = len(pts) / (len(pts) + 2.0)
+            vel_d *= shrink
+            grow_d *= shrink
         grow_c = max(GROW_CLAMP[0], min(GROW_CLAMP[1], grow_d))
         base = -rank + W_GROW * grow_c * 10.0 + W_PLAY * math.log10(max(playing, 1))
         # Survival: games leave the chart MAX_AGE_DAYS after creation.
