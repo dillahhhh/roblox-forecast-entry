@@ -26,7 +26,7 @@ fold: the chart turns over too fast for trends to persist).
 
 The forecast is a *mixture over horizons* h = 0, 0.5, ..., 3 days: at each
 horizon each place's probability is a Gaussian around the expected rank, with
-sigma widening with horizon (1.5 places at h=0, +1.0 per day) because the
+sigma widening with horizon (1.75 places at h=0, +1.0 per day) because the
 chart's top 10 turns over fast (median 6 places change between reads a few
 hours apart).  Averaging over horizons is what the scoring wants: the score
 is the mean log-probability over the window's 72 hourly reads, so early
@@ -57,17 +57,17 @@ RULES.txt, log score, floor 0.0001, unnamed share).  History carries real
 details (created/votes/favorites), as the final grading history will:
 
   fold                               this forecast   house baseline
-  practice window (Nov 8-10)         -29.73 (7.8 hits)   -43.51 (6.4 hits)
-  fold A (reads 1-24 -> 25-34)       -37.97
-  fold C (reads 1-14 -> 15-24)       -36.44
-  fold D (to Nov 10 23:23 -> Nov 11) -26.94
-  mean, folds P/A/C                  -34.71
+  practice window (Nov 8-10)         -29.77 (7.8 hits)   -43.51 (6.4 hits)
+  fold A (reads 1-24 -> 25-34)       -37.88
+  fold C (reads 1-14 -> 15-24)       -36.40
+  fold D (to Nov 10 23:23 -> Nov 11) -26.99
+  mean, folds P/A/C                  -34.69
 
 The previous version of this model scored -32.91 on the practice window;
 the gains come from (1) dropping the buggy created-age penalty, (2) a
 wider growth clamp [-1.5, 2.0] with stronger growth weight, (3) stronger
 slope shrinkage n/(n+4), (4) a longer 240 h window, (5) a tighter sigma
-(1.5 + 1.0/day) and (6) no rank-velocity extrapolation.  Top Trending rank,
+(1.75 + 1.0/day, retuned from 1.5 for the best mean across folds) and (6) no rank-velocity extrapolation.  Top Trending rank,
 growth acceleration, vote ratio and favorites were all tested as extra
 features and rejected -- each made every fold worse.
 
@@ -88,7 +88,7 @@ WINDOW_H = 240.0       # history window used for trends (hours)
 W_GROW = 3.5           # weight of playing-growth rate in the strength score
 W_PLAY = 0.5           # weight of log10(playing) level (tie-breaker only)
 GROW_CLAMP = (-1.5, 2.0)  # clamp on log-playing growth (per day)
-SIGMA0 = 1.5           # Gaussian sigma (places) at horizon 0
+SIGMA0 = 1.75          # Gaussian sigma (places) at horizon 0
 SIGMA_PER_DAY = 1.0    # sigma widening per day of horizon
 UNNAMED = 0.2          # mass left unnamed at each place (new entrants)
 MIN_P = 0.002          # rows below this are dropped

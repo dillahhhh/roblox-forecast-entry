@@ -25,7 +25,7 @@ fold: the chart turns over too fast for trends to persist).
 
 The forecast is a **mixture over horizons** h = 0, 0.5, …, 3 days: at each
 horizon each place's probability is a Gaussian around the expected rank,
-sigma widening with horizon (1.5 places at h=0, +1.0/day) because the top 10
+sigma widening with horizon (1.75 places at h=0, +1.0/day) because the top 10
 turns over fast (median 6 places change between reads hours apart).
 Averaging over horizons matches the scoring: the score is the mean
 log-probability over the window's 72 hourly reads, so early hours are tight
@@ -59,17 +59,17 @@ history will:
 
 | fold | this forecast | house baseline |
 |---|---|---|
-| practice window (Nov 8–10) | **−29.73** (7.8 top-10 hits) | −43.51 (6.4 hits) |
-| fold A (reads 1–24 → 25–34) | −37.97 | — |
-| fold C (reads 1–14 → 15–24) | −36.44 | — |
-| fold D (to Nov 10 23:23 → Nov 11) | −26.94 | — |
-| **mean, folds P/A/C** | **−34.71** | |
+| practice window (Nov 8–10) | **−29.77** (7.8 top-10 hits) | −43.51 (6.4 hits) |
+| fold A (reads 1–24 → 25–34) | −37.88 | — |
+| fold C (reads 1–14 → 15–24) | −36.40 | — |
+| fold D (to Nov 10 23:23 → Nov 11) | −26.99 | — |
+| **mean, folds P/A/C** | **−34.69** | |
 
 The previous version of this model scored −32.91 on the practice window;
 the gains come from (1) dropping the buggy created-age penalty, (2) a
 wider growth clamp [−1.5, 2.0] with stronger growth weight, (3) stronger
 slope shrinkage n/(n+4), (4) a longer 240 h window, (5) a tighter sigma
-(1.5 + 1.0/day) and (6) no rank-velocity extrapolation. Top Trending rank,
+(1.75 + 1.0/day, retuned from 1.5 for the best mean across folds) and (6) no rank-velocity extrapolation. Top Trending rank,
 growth acceleration, vote ratio and favorites were all tested as extra
 features and rejected — each made every fold worse.
 
