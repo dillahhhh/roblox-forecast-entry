@@ -59,11 +59,11 @@ history will:
 
 | fold | this forecast | house baseline |
 |---|---|---|
-| practice window (Nov 8–10) | **−29.77** (7.8 top-10 hits) | −43.51 (6.4 hits) |
+| practice window (Nov 8–10) | **−29.67** (7.8 top-10 hits) | −43.51 (6.4 hits) |
 | fold A (reads 1–24 → 25–34) | −37.88 | — |
 | fold C (reads 1–14 → 15–24) | −36.40 | — |
 | fold D (to Nov 10 23:23 → Nov 11) | −26.99 | — |
-| **mean, folds P/A/C** | **−34.69** | |
+| **mean, folds P/A/C** | **−34.65** | |
 
 The previous version of this model scored −32.91 on the practice window;
 the gains come from (1) dropping the buggy created-age penalty, (2) a
