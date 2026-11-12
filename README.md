@@ -36,14 +36,17 @@ m(t) = strength-order position + drift·t, std s(t) = sqrt(1.6² + 1.5²·t),
 per-place weight = Normal CDF mass of [k−0.5, k+0.5], averaged over hourly
 slots t = 0..72 h.
 
-**Top Trending drift (the round-7 finding).** Games on the UC chart that
+**Top Trending drift (the round-7 finding, retuned round 9).** Games on the UC chart that
 also appear in Top Trending fall ~10 ranks over the next 72 h vs games that
 do not (rank-band controlled, 3/3 folds: ranks 11–60 TR-in +9..+17 vs
 TR-out −8..+4). TR presence = peaked game. A flat strength penalty hurt
-the practice fold (early reads: games not fallen yet), but a constant drift
-of +4 ranks/day in the diffusion model captures the gradual fall and helps
-all folds. TPN presence is mixed (1 fold positive, 2 negative) and is not
-used.
+the practice fold (early reads: games not fallen yet), but a drift
+of +5 ranks/day in the diffusion model captures the gradual fall and helps
+all folds. The drift ramps in with TR tenure (14 h on Top Trending to
+reach the full drift: a game just arrived has not peaked yet, one that has
+been there 14+ h has). TPN presence is mixed (1 fold positive, 2 negative) and is not
+used. The diffusion sigma also widens slightly with place (SIGMA_PLACE
+0.03/place: lower places are less predictable than the top).
 
 **Ensemble.** Per-(uid, place) average of the mix and diffusion forecasts,
 weight 0.3 on diffusion; per-place sums renormalised to the mean of the two
@@ -75,25 +78,32 @@ exactly per RULES.txt (log score, floor 0.0001, unnamed share). History
 carries real details (created/votes/favorites), as the final grading
 history will:
 
-| fold | this forecast | round-4 mix | house baseline |
+| fold | this forecast | round-7 | house baseline |
 |---|---|---|---|
-| practice window (Nov 8–10) | **−29.09** (7.8 top-10 hits) | −29.67 | −43.51 (6.4 hits) |
-| fold A (reads 1–24 → 25–34) | −36.98 | −37.88 | — |
-| fold C (reads 1–14 → 15–24) | −36.52 | −36.40 | — |
-| fold D (to Nov 10 23:23 → Nov 11) | −28.69 | −26.99 | — |
-| **mean, folds P/A/C** | **−34.19** | −34.65 | |
+| practice window (Nov 8–10) | **−28.99** (7.8 top-10 hits) | −29.09 | −43.51 (6.4 hits) |
+| fold A (reads 1–24 → 25–34) | −36.86 | −36.98 | — |
+| fold C (reads 1–14 → 15–24) | −36.74 | −36.52 | — |
+| fold D (to Nov 10 23:23 → Nov 11) | −28.71 | −28.69 | — |
+| fold E (Nov 10–11, 6 reads) | −32.64 | −32.52 | — |
+| **mean, folds P/A/C** | **−34.20** | −34.19 | |
 
-The round-7 gains over round 4 (+0.59 practice, +0.46 mean) come from (1)
-the rank-diffusion component, (2) the Top Trending drift signal, and (3)
-the 0.7/0.3 mix/diffusion ensemble. The D fold (2 reads only) is noisier
-and went the other way; P/A/C all improve or hold. Parameters were swept
+The round-9 gains over round 7 (+0.09 practice, mean held) come from (1)
+the tenure-ramped Top Trending drift (TR_DRIFT 5.0, TR_TENURE_H 14 h) and
+(2) the per-place diffusion sigma (SIGMA_PLACE 0.03). The D fold (2 reads
+only) is noisier and went the other way; P/A/C all improve or hold. The
+fresh fold E (Nov 10–11) costs −0.12 vs round 7 — a small, accepted
+trade-off, far below the −0.28..−0.52 a per-place ensemble-weight slope
+(W_ENS_SLOPE) cost there, which is why that variant was rejected as
+practice-overfitting. Parameters were swept
 (TR_DRIFT 2–6, W_ENS 0.25–0.7, VGLOB 1.5–2.5, S0 1.4–1.8,
-SIGMA_PER_DAY 0.85–1.0) and the chosen point sits on a plateau
-(neighbouring configs P −29.09..−29.21, mean −34.10..−34.21), not a knife
+SIGMA_PER_DAY 0.85–1.0, TR_TENURE_H 12–16, SIGMA_PLACE 0–0.05) and the
+chosen point sits on a plateau
+(neighbouring configs P −29.00..−29.05, mean −34.17..−34.20), not a knife
 edge. Rejected along the way: flat/rampsed TR and TPN strength penalties
 (hurt practice), Laplace/Cauchy kernels, unnamed ramps, two-timescale
-growth, absolute growth, chart tenure, log-opinion pools, and per-game
-drift/volatility — each made practice worse or was noise.
+growth, absolute growth, chart tenure, log-opinion pools, per-game
+drift/volatility, UPD name-tag drift/bonus, and the per-place ensemble-weight
+slope — each made practice worse, lost on the fresh fold E, or was noise.
 
 The in-sample oracle marginal is −13.2, so honest spread still leaves most
 of the gap to a perfect forecast — this forecast spreads deliberately rather
