@@ -378,6 +378,12 @@ def main():
                 if ramp:
                     use = sorted(feats, key=lambda f: (-(f["base"] - f["pen"] * (hd / 3.0) ** TR_RAMP_Q), f["uid"]))
                 elif GROW_PLACE_DECAY or RANK_PLACE_BOOST:
+                    # Round-10 per-place strength: growth matters most for the
+                    # top places (a breakout game shoots to #1-3), so the
+                    # growth part of the strength decays linearly with place
+                    # (at place 10 it is halved when GROW_PLACE_DECAY=0.5).
+                    # Re-sorting per place makes the mix model's Gaussian
+                    # centre place-aware without changing the diffusion model.
                     gmult = 1.0 - GROW_PLACE_DECAY * (place - 1) / 10.0
                     def _sk(f, _g=gmult, _p=place):
                         return (-(f["base"] + f["grow_part"] * (_g - 1.0)
